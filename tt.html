@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tabel Data Real-time</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Animasi untuk notifikasi copy */
+        .copy-toast {
+            animation: fadeInOut 2s forwards;
+        }
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(10px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen flex flex-col items-center p-4 md:p-10 text-slate-800">
+
+    <div class="w-full max-w-5xl">
+        <!-- Kontainer Tabel -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead id="table-head">
+                        <!-- Header otomatis -->
+                    </thead>
+                    <tbody id="table-body" class="divide-y divide-slate-100">
+                        <!-- Loading State -->
+                        <tr>
+                            <td colspan="100%" class="py-20 text-center">
+                                <div class="flex flex-col items-center gap-4">
+                                    <div class="w-10 h-10 border-4 border-slate-100 border-t-emerald-600 rounded-full animate-spin"></div>
+                                    <p class="text-slate-500 font-medium text-sm">Memuat data...</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Section Info & Tombol (Tengah) -->
+        <div class="flex flex-col items-center gap-3">
+            <p id="update-time" class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">
+                Menghubungkan ke server...
+            </p>
+            <button onclick="fetchData()" class="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full text-sm font-bold transition-all active:scale-95 shadow-lg shadow-emerald-100">
+                <i data-lucide="refresh-cw" class="w-4 h-4"></i> Segarkan Data
+            </button>
+        </div>
+    </div>
+
+    <!-- Container untuk notifikasi mengambang -->
+    <div id="toast-container" class="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+    <script>
+        const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT00zSfeEwd8aVJlr5jVuNy1gFuNR5YwHWupihHjeaBuRY_MsTPssDxc4GaYvK7hyxPFk6RgM0q0Lnu/pub?gid=0&single=true&output=csv'; 
+        
+        let allData = [];
+        let headers = [];
+
+        window.onload = function() {
+            lucide.createIcons();
+            fetchData();
+        };
+
+        async function fetchData() {
+            const updateTimeDisp = document.getElementById('update-time');
+            const tableBody = document.getElementById('table-body');
+
+            try {
+                const response = await fetch(SHEET_CSV_URL);
+                if (!response.ok) throw new Error('Gagal terhubung.');
+                
+                const csvText = await response.text();
+                const rows = csvText.split('\n').map(row => {
+                    return row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+                });
+
+                headers = rows[0].map(h => h.replace(/"/g, '').trim());
+                allData = rows.slice(1).filter(row => row.length >= headers.length && row.some(cell => cell.trim() !== ""));
+
+                renderTable(allData);
+                
+                updateTimeDisp.textContent = 'Terakhir disinkronkan: ' + new Date().toLocaleString('id-ID', { 
+                    dateStyle: 'medium', 
+                    timeStyle: 'short' 
+                });
+                
+                lucide.createIcons();
+            } catch (error) {
+                console.error(error);
+                showError("Gagal Sinkronisasi", "Pastikan internet aktif dan spreadsheet dipublikasikan.");
+            }
+        }
+
+        function renderTable(data) {
+            const tableHead = document.getElementById('table-head');
+            const tableBody = document.getElementById('table-body');
+
+            tableHead.innerHTML = `<tr class="bg-slate-50 border-b border-slate-200">
+                ${headers.map(h => `<th class="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-left">${h}</th>`).join('')}
+            </tr>`;
+
+            if (data.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="100%" class="py-20 text-center text-slate-400">Tidak ada data.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = data.map(row => `
+                <tr class="hover:bg-slate-50 transition-colors group">
+                    ${row.map(cell => {
+                        const val = cell.replace(/"/g, '').trim();
+                        if (!val) return `<td class="px-6 py-4 text-sm text-slate-400 italic">-</td>`;
+                        
+                        return `
+                        <td class="px-6 py-4 text-sm text-slate-600 relative">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="truncate max-w-[200px] md:max-w-xs">${val}</span>
+                                <button onclick="copyToClipboard('${val.replace(/'/g, "\\'")}')" 
+                                        class="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-emerald-100 hover:text-emerald-700 text-slate-400 rounded-md transition-all title="Salin data">
+                                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                                </button>
+                            </div>
+                        </td>`;
+                    }).join('')}
+                </tr>
+            `).join('');
+            
+            lucide.createIcons();
+        }
+
+        function copyToClipboard(text) {
+            const tempInput = document.createElement('input');
+            tempInput.value = text;
+            document.body.appendChild(tempInput);
+            tempInput.select();
+            document.execCommand('copy');
+            document.body.removeChild(tempInput);
+
+            showToast(`"${text}" berhasil disalin!`);
+        }
+
+        function showToast(message) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = "copy-toast bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-medium shadow-xl mb-2 flex items-center gap-2";
+            toast.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-400"></i> ${message}`;
+            
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.remove();
+            }, 2000);
+        }
+
+        function showError(title, msg) {
+            document.getElementById('table-body').innerHTML = `
+                <tr>
+                    <td colspan="100%" class="py-20 text-center">
+                        <div class="flex flex-col items-center gap-2 text-red-500">
+                            <i data-lucide="alert-circle" class="w-10 h-10"></i>
+                            <h3 class="font-bold text-sm">${title}</h3>
+                            <p class="text-[10px] text-slate-400">${msg}</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            lucide.createIcons();
+        }
+    </script>
+</body>
+</html>
